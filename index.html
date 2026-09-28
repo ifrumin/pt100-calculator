@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PT100 Calculator</title>
+<style>
+  :root { --bg:#0a0a0a; --panel:#141414; --line:#2a2a2a; --fg:#e0e0e0; --dim:#666; --acc:#ff6b35; --hot:#ffb800; --err:#ff4444; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:"JetBrains Mono","SF Mono",Consolas,monospace; padding:24px 16px; max-width:520px; margin:0 auto; }
+  h1 { color:var(--acc); font-size:26px; margin:0 0 20px; }
+  .sub { font-size:11px; letter-spacing:3px; color:var(--dim); text-transform:uppercase; }
+  .toggle { display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin-bottom:20px; }
+  .toggle button { flex:1; padding:10px; background:none; border:0; color:#888; font:inherit; font-weight:600; cursor:pointer; }
+  .toggle button.on { background:var(--acc); color:var(--bg); }
+  label { display:block; font-size:11px; color:var(--dim); letter-spacing:1px; text-transform:uppercase; margin-bottom:6px; }
+  .in { position:relative; }
+  input[type=number] { width:100%; padding:14px 44px 14px 16px; font:inherit; font-size:22px; background:var(--panel); border:1px solid var(--line); border-radius:6px; color:#fff; outline:none; }
+  input:focus { border-color:var(--acc); }
+  .unit { position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#555; font-size:18px; }
+  .out { margin-top:14px; padding:18px 16px; background:var(--panel); border:1px solid #222; border-radius:6px; min-height:70px; }
+  .out.ok { background:#1a1200; border-color:#3d2e00; }
+  .big { font-size:34px; font-weight:700; color:var(--hot); line-height:1; }
+  .small { font-size:13px; color:#887a50; margin-top:6px; }
+  .err { color:var(--err); font-size:14px; }
+  .hint { color:#444; font-size:15px; }
+  .row { display:flex; gap:10px; margin-top:14px; }
+  .row > div { flex:1; }
+  .row input { font-size:16px; padding:10px 34px 10px 12px; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; background:#111; border:1px solid #222; border-radius:6px; overflow:hidden; font-size:14px; }
+  th { font-size:10px; color:#555; text-transform:uppercase; letter-spacing:1px; padding:8px 12px; text-align:left; border-bottom:1px solid #222; font-weight:normal; }
+  td { padding:9px 12px; border-bottom:1px solid #1a1a1a; cursor:pointer; }
+  tr:hover td { background:#1a1a1a; }
+  td.r { text-align:right; color:#888; }
+  td.n { text-align:right; color:#555; font-size:12px; }
+  .foot { margin-top:28px; font-size:10px; color:#333; text-align:center; }
+  section { margin-top:26px; }
+</style>
+</head>
+<body>
+<div class="sub">IEC 60751 · Callendar–Van Dusen</div>
+<h1>PT100 Calculator</h1>
+
+<div class="toggle">
+  <button id="bR" class="on" onclick="setMode('r2t')">Ω → °C</button>
+  <button id="bT" onclick="setMode('t2r')">°C → Ω</button>
+</div>
+
+<div id="pR">
+  <label>Measured resistance</label>
+  <div class="in"><input id="ohm" type="number" step="0.01" placeholder="e.g. 150" autofocus oninput="calc()"><span class="unit">Ω</span></div>
+  <div class="row">
+    <div><label>Lead resistance (2-wire)</label><div class="in"><input id="lead" type="number" step="0.01" value="0" oninput="calc()"><span class="unit">Ω</span></div></div>
+    <div><label>R₀</label><div class="in"><input id="r0" type="number" step="1" value="100" oninput="calc()"><span class="unit">Ω</span></div></div>
+  </div>
+  <div id="oR" class="out"><span class="hint">Enter resistance</span></div>
+</div>
+
+<div id="pT" style="display:none">
+  <label>Temperature</label>
+  <div class="in"><input id="tc" type="number" step="0.1" placeholder="e.g. 200" oninput="calc()"><span class="unit">°C</span></div>
+  <div id="oT" class="out"><span class="hint">Enter temperature</span></div>
+</div>
+
+<section>
+  <div class="sub" style="margin-bottom:8px">Quick reference (R₀ = 100 Ω)</div>
+  <table><thead><tr><th>Temp</th><th style="text-align:right">Resistance</th><th style="text-align:right">Note</th></tr></thead><tbody id="ref"></tbody></table>
+</section>
+
+<div class="foot">PT100 α = 0.00385 · A = 3.9083e-3 · B = −5.775e-7 · C = −4.183e-12 (T &lt; 0 °C)<br>© 2026 Idan Frumin & Claude · MIT</div>
+
+<script>
+const A=3.9083e-3, B=-5.775e-7, C=-4.183e-12;
+let mode='r2t';
+const $=id=>document.getElementById(id);
+
+function tempToOhm(t, R0=100){
+  if(t<-200||t>850) return null;
+  return t>=0 ? R0*(1+A*t+B*t*t) : R0*(1+A*t+B*t*t+C*(t-100)*t*t*t);
+}
+function ohmToTemp(r, R0=100){
+  if(r<R0*0.1852) return {err:'Below PT100 range (< −200 °C)'};
+  if(r>R0*3.9048) return {err:'Above PT100 range (> 850 °C)'};
+  if(r>=R0){ const d=A*A-4*B*(1-r/R0); return {t:(-A+Math.sqrt(d))/(2*B)}; }
+  let t=(r/R0-1)/A;
+  for(let i=0;i<50;i++){
+    const f=R0*(1+A*t+B*t*t+C*(t-100)*t*t*t)-r;
+    const df=R0*(A+2*B*t+C*(4*t*t*t-300*t*t));
+    const dt=f/df; t-=dt; if(Math.abs(dt)<1e-7) break;
+  }
+  return {t};
+}
+function setMode(m){ mode=m; $('bR').classList.toggle('on',m==='r2t'); $('bT').classList.toggle('on',m==='t2r');
+  $('pR').style.display=m==='r2t'?'':'none'; $('pT').style.display=m==='t2r'?'':'none'; calc(); }
+function calc(){
+  if(mode==='r2t'){
+    const r=parseFloat($('ohm').value), lead=parseFloat($('lead').value)||0, R0=parseFloat($('r0').value)||100, o=$('oR');
+    if(isNaN(r)){ o.className='out'; o.innerHTML='<span class="hint">Enter resistance</span>'; return; }
+    const res=ohmToTemp(r-lead,R0);
+    if(res.err){ o.className='out'; o.innerHTML=`<span class="err">${res.err}</span>`; return; }
+    const t=res.t; o.className='out ok';
+    o.innerHTML=`<div class="big">${t.toFixed(2)} °C</div><div class="small">${(t*9/5+32).toFixed(1)} °F · ${(t+273.15).toFixed(2)} K${lead?` · lead-corrected (−${lead} Ω)`:''}</div>`;
+  } else {
+    const t=parseFloat($('tc').value), o=$('oT');
+    if(isNaN(t)){ o.className='out'; o.innerHTML='<span class="hint">Enter temperature</span>'; return; }
+    const r=tempToOhm(t);
+    if(r===null){ o.className='out'; o.innerHTML='<span class="err">Out of range (−200 … 850 °C)</span>'; return; }
+    o.className='out ok';
+    o.innerHTML=`<div class="big">${r.toFixed(3)} Ω</div><div class="small">${(t*9/5+32).toFixed(1)} °F · ${(t+273.15).toFixed(2)} K</div>`;
+  }
+}
+const REF=[[0,'Ice point'],[25,'Room'],[100,'Boiling H₂O'],[150,''],[200,''],[250,''],[300,'']];
+$('ref').innerHTML=REF.map(([t,n])=>`<tr onclick="pick(${t})"><td>${t} °C</td><td class="r">${tempToOhm(t).toFixed(2)} Ω</td><td class="n">${n}</td></tr>`).join('');
+function pick(t){ if(mode==='r2t'){ $('ohm').value=tempToOhm(t).toFixed(2); } else { $('tc').value=t; } calc(); }
+</script>
+</body>
+</html>
